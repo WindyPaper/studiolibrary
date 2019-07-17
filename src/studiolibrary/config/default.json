@@ -50,7 +50,8 @@
     "studiolibrarymaya.animitem.AnimItem",
     "studiolibrarymaya.poseitem.PoseItem",
     "studiolibrarymaya.mirroritem.MirrorItem",
-    "studiolibrarymaya.setsitem.SetsItem"
+    "studiolibrarymaya.setsitem.SetsItem",
+    "studiolibrarymaya.blendshapeitem.BlendshapeItem"
   ],
 
   // Used for very basic analytics and does not send any personal information

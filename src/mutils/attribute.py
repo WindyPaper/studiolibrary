@@ -257,6 +257,33 @@ class Attribute(object):
         if self._type is None:
 
             try:
+                # import traceback
+                # traceback.print_stack()
+                
+                #   File "D:\git_projects\studiolibrary\src\studiolibrarymaya\basesavewidget.py", line 513, in accept
+                #     iconPath=iconPath,
+                #   File "D:\git_projects\studiolibrary\src\studiolibrarymaya\basesavewidget.py", line 544, in save
+                #     **options
+                #   File "D:\git_projects\studiolibrary\src\studioqt\decorators.py", line 24, in wrapped
+                #     return fn(*args, **kwargs)
+                #   File "D:\git_projects\studiolibrary\src\studiolibrary\libraryitem.py", line 702, in save
+                #     self.write(tempPath, *args, **kwargs)
+                #   File "D:\git_projects\studiolibrary\src\studiolibrarymaya\animitem.py", line 320, in write
+                #     bakeConnected=options.get("bake")
+                #   File "D:\git_projects\studiolibrary\src\mutils\animation.py", line 125, in saveAnim
+                #     anim = mutils.Animation.fromObjects(objects)
+                #   File "D:\git_projects\studiolibrary\src\mutils\transferobject.py", line 73, in fromObjects
+                #     t.add(obj)
+                #   File "D:\git_projects\studiolibrary\src\mutils\transferobject.py", line 280, in add
+                #     self.objects()[name] = self.createObjectData(name)
+                #   File "D:\git_projects\studiolibrary\src\mutils\pose.py", line 152, in createObjectData
+                #     if attr.isValid():
+                #   File "D:\git_projects\studiolibrary\src\mutils\attribute.py", line 166, in isValid
+                #     return self.type() in VALID_ATTRIBUTE_TYPES
+                #   File "D:\git_projects\studiolibrary\src\mutils\attribute.py", line 261, in type
+                #     traceback.print_stack()
+
+                logger.debug("WWW Get type name = " + self.fullname())
                 self._type = maya.cmds.getAttr(self.fullname(), type=True)
                 self._type = self._type.encode('ascii')
             except Exception:
