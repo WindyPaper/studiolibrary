@@ -377,6 +377,8 @@ class TransferObject(object):
         metadata = {"metadata": self.metadata()}
         data = self.dump(metadata)[:-1] + ","
 
+        logger.debug("Save objects")
+        logger.debug(self.objects())
         # Move the objects information to after the metadata
         objects = {"objects": self.objects()}
         data += self.dump(objects)[1:]

@@ -54,9 +54,14 @@ pose.load(namespaces=["character1", "character2"])
 pose.load(objects=["Character1:Hand_L", "Character1:Finger_L"])
 
 """
+import os
+import shutil
 import logging
 
+from studiovendor.Qt import QtWidgets
+
 import mutils
+import mutils.gui
 
 try:
     import maya.cmds
@@ -69,10 +74,66 @@ __all__ = ["Blendshape", "saveBlendshape", "loadBlendshape"]
 
 logger = logging.getLogger(__name__)
 
-_blendshape_ = None
+MIN_TIME_LIMIT = -10000
+MAX_TIME_LIMIT = 100000
+DEFAULT_FILE_TYPE = "mayaBinary"  # "mayaAscii"
+BLEND_SHAPE_TYPE = "blendShape"
+
+# A feature flag that will be removed in the future.
+FIX_SAVE_ANIM_REFERENCE_LOCKED_ERROR = True
+
+class PasteOption:
+
+    Insert = "insert"
+    Replace = "replace"
+    ReplaceAll = "replace all"
+    ReplaceCompletely = "replaceCompletely"
 
 
-def saveBlendshape(path, objects, metadata=None):
+class AnimationTransferError(Exception):
+    """Base class for exceptions in this module."""
+    pass
+
+
+class OutOfBoundsError(AnimationTransferError):
+    """Exceptions for clips or ranges that are outside the expected range"""
+    pass
+
+
+def validateAnimLayers():
+    """
+    Check if the selected animation layer can be exported.
+    
+    :raise: AnimationTransferError
+    """
+    animLayers = maya.mel.eval('$gSelectedAnimLayers=$gSelectedAnimLayers')
+
+    # Check if more than one animation layer has been selected.
+    if len(animLayers) > 1:
+        msg = "More than one animation layer is selected! " \
+              "Please select only one animation layer for export!"
+
+        raise AnimationTransferError(msg)
+
+    # Check if the selected animation layer is locked
+    if len(animLayers) == 1:
+        if maya.cmds.animLayer(animLayers[0], query=True, lock=True):
+            msg = "Cannot export an animation layer that is locked! " \
+                  "Please unlock the anim layer before exporting animation!"
+
+            raise AnimationTransferError(msg)
+
+def saveBlendshape(
+        objects,
+        path,
+        time=None,
+        sampleBy=1,
+        fileType="",
+        metadata=None,
+        iconPath="",
+        sequencePath="",
+        bakeConnected=True
+):
     """
     Convenience function for saving a pose to disc for the given objects.
 
@@ -91,38 +152,113 @@ def saveBlendshape(path, objects, metadata=None):
     :type metadata: dict or None
     :rtype: Blendshape
     """
+    # Copy the icon path to the temp location
+    if iconPath:
+        shutil.copyfile(iconPath, path + "/thumbnail.jpg")
+
+    # Copy the sequence path to the temp location
+    if sequencePath:
+        shutil.move(sequencePath, path + "/sequence")
+
     blendshape = mutils.Blendshape.fromObjects(objects)
 
     if metadata:
         blendshape.updateMetadata(metadata)
 
-    blendshape.save(path)
+    blendshape.save(
+        path,
+        time=time,
+        sampleBy=sampleBy,
+        fileType=fileType,
+        bakeConnected=bakeConnected
+    )
 
     return blendshape
 
 
-def loadBlendshape(path, *args, **kwargs):
+def loadBlendshape(
+    path,
+    spacing=1,
+    objects=None,
+    option=None,
+    connect=False,
+    namespaces=None,
+    startFrame=None,
+    mirrorTable=None,
+    currentTime=None,
+    showDialog=False,
+):
     """
-    Convenience function for loading the given pose path.
-    
-    :type path: str
-    :type args: list
-    :type kwargs: dict 
-    :rtype: Blendshape 
+    Load the animations in the given order of paths with the spacing specified.
+
+    :type paths: list[str]
+    :type spacing: int
+    :type connect: bool
+    :type objects: list[str]
+    :type namespaces: list[str]
+    :type startFrame: int
+    :type option: PasteOption
+    :type currentTime: bool
+    :type mirrorTable: bool
+    :type showDialog: bool
     """
-    global _blendshape_
+    isFirstAnim = True
 
-    clearCache = kwargs.get("clearCache")
+    if spacing < 1:
+        spacing = 1
 
-    if not _blendshape_ or _blendshape_.path() != path or clearCache:
-        _blendshape_ = Blendshape.fromPath(path)
+    if option is None or option == "replace all":
+        option = PasteOption.ReplaceCompletely
 
-    _blendshape_.load(*args, **kwargs)
+    if currentTime and startFrame is None:
+        startFrame = int(maya.cmds.currentTime(query=True))
 
-    return _blendshape_
+    if showDialog:
+
+        msg = "Load the following animation in sequence;\n"
+
+        for i, path in enumerate(paths):
+            msg += "\n {0}. {1}".format(i, os.path.basename(path))
+
+        msg += "\n\nPlease choose the spacing between each animation."
+
+        spacing, accepted = QtWidgets.QInputDialog.getInt(
+            None,
+            "Load animation sequence",
+            msg,
+            spacing,
+            QtWidgets.QInputDialog.NoButtons,
+        )
+
+        if not accepted:
+            raise Exception("Dialog canceled!")
+
+    for path in paths:
+
+        anim = mutils.Blendshape.fromPath(path)
+
+        if startFrame is None and isFirstAnim:
+            startFrame = anim.startFrame()
+
+        if option == "replaceCompletely" and not isFirstAnim:
+            option = "insert"
+
+        anim.load(
+            option=option,
+            objects=objects,
+            connect=connect,
+            startFrame=startFrame,
+            namespaces=namespaces,
+            currentTime=currentTime,
+            mirrorTable=mirrorTable,
+        )
+
+        duration = anim.endFrame() - anim.startFrame()
+        startFrame += duration + spacing
+        isFirstAnim = False
 
 
-class Blendshape(mutils.TransferObject):
+class Blendshape(mutils.Animation):
 
     def __init__(self):
         mutils.TransferObject.__init__(self)
@@ -135,6 +271,16 @@ class Blendshape(mutils.TransferObject):
         self._mirrorTable = None
         self._autoKeyFrame = None
 
+    def getBlendshapeParamList(self, name):
+        attrs = []
+        blend_shape_param_size = maya.cmds.getAttr(name + ".weight", size = True)                
+        for i in range(0, blend_shape_param_size):
+            # $attr_name = ($blend_shape + ".weight[" + $i + "]");
+            attr_w_name = (name + ".weight[{0}]").format(i)
+            alias_attr_name = maya.cmds.aliasAttr(attr_w_name, query = True);
+            attrs.append(alias_attr_name)
+        return attrs
+
     def createObjectData(self, name):
         """
         Create the object data for the given object name.
@@ -143,14 +289,11 @@ class Blendshape(mutils.TransferObject):
         :rtype: dict
         """
         attrs = []
-        if name == "Face":
-            blend_shape_param_size = maya.cmds.getAttr(name + ".weight", size = True)                
-            for i in range(0, blend_shape_param_size):
-                # $attr_name = ($blend_shape + ".weight[" + $i + "]");
-                attr_w_name = (name + ".weight[{0}]").format(i)
-                alias_attr_name = maya.cmds.aliasAttr(attr_w_name, query = True);
-                attrs.append(alias_attr_name)
-            # attrs = [mutils.Attribute(name, attr) for attr in attrs]
+        # logger.debug(("maya.cmds.ls(name, showType = True) = {0}").format(maya.cmds.ls(name, showType = True)))
+        # [u'Face', u'blendShape']
+        name_type_list = maya.cmds.ls(name, showType = True)
+        if name_type_list[1] == BLEND_SHAPE_TYPE:
+            attrs = self.getBlendshapeParamList(name)
         else:
             attrs = maya.cmds.listAttr(name, keyable = True) or []        
             attrs = list(set(attrs))
@@ -171,430 +314,147 @@ class Blendshape(mutils.TransferObject):
 
         return data
 
-    def select(self, objects=None, namespaces=None, **kwargs):
+    @mutils.timing
+    @mutils.unifyUndo
+    @mutils.showWaitCursor
+    @mutils.restoreSelection
+    def save(
+        self,
+        path,
+        time=None,
+        sampleBy=1,
+        fileType="",
+        bakeConnected=True
+    ):
         """
-        Select the objects contained in the pose file.
+        Save all animation data from the objects set on the Anim object.
+
+        :type path: str
+        :type time: (int, int) or None
+        :type sampleBy: int
+        :type fileType: str
+        :type bakeConnected: bool
         
-        :type objects: list[str] or None
-        :type namespaces: list[str] or None
         :rtype: None
-        """
-        selectionSet = mutils.SelectionSet.fromPath(self.path())
-        selectionSet.load(objects=objects, namespaces=namespaces, **kwargs)
-
-    def cache(self):
-        """
-        Return the current cached attributes for the pose.
-        
-        :rtype: list[(Attribute, Attribute)]
-        """
-        return self._cache
-
-    def attrs(self, name):
-        """
-        Return the attribute for the given name.
-        
-        :type name: str
-        :rtype: dict
-        """
-        return self.object(name).get("attrs", {})
-
-    def attr(self, name, attr):
-        """
-        Return the attribute data for the given name and attribute.
-
-        :type name: str
-        :type attr: str
-        :rtype: dict
-        """
-        return self.attrs(name).get(attr, {})
-
-    def attrType(self, name, attr):
-        """
-        Return the attribute type for the given name and attribute.
-        
-        :type name: str
-        :type attr: str
-        :rtype: str
-        """
-        return self.attr(name, attr).get("type", None)
-
-    def attrValue(self, name, attr):
-        """
-        Return the attribute value for the given name and attribute.
-        
-        :type name: str
-        :type attr: str
-        :rtype: str | int | float
-        """
-        return self.attr(name, attr).get("value", None)
-
-    def setMirrorAxis(self, name, mirrorAxis):
-        """
-        Set the mirror axis for the given name.
-        
-        :type name: str
-        :type mirrorAxis: list[int]
-        """
-        if name in self.objects():
-            self.object(name).setdefault("mirrorAxis", mirrorAxis)
-        else:
-            msg = "Object does not exist in pose. " \
-                  "Cannot set mirror axis for %s"
-
-            logger.debug(msg, name)
-
-    def mirrorAxis(self, name):
-        """
-        Return the mirror axis for the given name.
-        
-        :rtype: list[int] | None
-        """
-        result = None
-        if name in self.objects():
-            result = self.object(name).get("mirrorAxis", None)
-
-        if result is None:
-            logger.debug("Cannot find mirror axis in pose for %s", name)
-
-        return result
-
-    def updateMirrorAxis(self, name, mirrorAxis):
-        """
-        Update the mirror axis for the given object name.
-        
-        :type name: str
-        :type mirrorAxis: list[int]
-        """
-        self.setMirrorAxis(name, mirrorAxis)
-
-    def mirrorTable(self):
-        """
-        Return the Mirror Table for the pose.
-        
-        :rtype: mutils.MirrorTable
-        """
-        return self._mirrorTable
-
-    def setMirrorTable(self, mirrorTable):
-        """
-        Set the Mirror Table for the pose.
-        
-        :type mirrorTable: mutils.MirrorTable
         """
         objects = self.objects().keys()
-        self._mirrorTable = mirrorTable
+        logger.debug(("objects = {0}").format(objects))
 
-        for srcName, dstName, mirrorAxis in mirrorTable.matchObjects(objects):
-            self.updateMirrorAxis(dstName, mirrorAxis)
+        fileType = fileType or DEFAULT_FILE_TYPE
 
-    def mirrorValue(self, name, attr, mirrorAxis):
-        """
-        Return the mirror value for the given name, attribute and mirror axis.
-        
-        :type name: str
-        :type attr: str
-        :type mirrorAxis: list[]
-        :rtype: None | int | float
-        """
-        value = None
+        if not time:
+            time = mutils.selectedObjectsFrameRange(objects)
+        start, end = time
 
-        if self.mirrorTable() and name:
+        # Check selected animation layers
+        validateAnimLayers()
 
-            value = self.attrValue(name, attr)
+        # Check frame range
+        if start is None or end is None:
+            msg = "Please specify a start and end frame!"
+            raise AnimationTransferError(msg)
 
-            if value is not None:
-                value = self.mirrorTable().formatValue(attr, value, mirrorAxis)
-            else:
-                logger.debug("Cannot find mirror value for %s.%s", name, attr)
+        if start >= end:
+            msg = "The start frame cannot be greater than or equal to the end frame!"
+            raise AnimationTransferError(msg)
 
-        return value
+        # Check if animation exists
+        if mutils.getDurationFromNodes(objects or []) <= 0:
+            msg = "No animation was found on the specified object/s! " \
+                  "Please create a pose instead!"
+            raise AnimationTransferError(msg)
 
-    def beforeLoad(self, clearSelection=True):
-        """
-        Called before loading the pose.
-        
-        :type clearSelection: bool
-        """
-        logger.debug('Before Load "%s"', self.path())
+        self.setMetadata("endFrame", end)
+        self.setMetadata("startFrame", start)
 
-        if not self._isLoading:
-            self._isLoading = True
-            maya.cmds.undoInfo(openChunk=True)
+        end += 1
+        validCurves = []
+        deleteObjects = []
 
-            self._selection = maya.cmds.ls(selection=True) or []
-            self._autoKeyFrame = maya.cmds.autoKeyframe(query=True, state=True)
-
-            maya.cmds.autoKeyframe(edit=True, state=False)
-            maya.cmds.select(clear=clearSelection)
-
-    def afterLoad(self):
-        """Called after loading the pose."""
-        if not self._isLoading:
-            return
-
-        logger.debug("After Load '%s'", self.path())
-
-        self._isLoading = False
-        if self._selection:
-            maya.cmds.select(self._selection)
-            self._selection = None
-
-        maya.cmds.autoKeyframe(edit=True, state=self._autoKeyFrame)
-        maya.cmds.undoInfo(closeChunk=True)
-
-        logger.debug('Loaded "%s"', self.path())
-
-    @mutils.timing
-    def load(
-            self,
-            objects=None,
-            namespaces=None,
-            attrs=None,
-            blend=100,
-            key=False,
-            mirror=False,
-            refresh=False,
-            batchMode=False,
-            clearCache=False,
-            mirrorTable=None,
-            onlyConnected=False,
-            clearSelection=False,
-            ignoreConnected=False,
-            searchAndReplace=None,
-    ):
-        """
-        Load the pose to the given objects or namespaces.
-        
-        :type objects: list[str]
-        :type namespaces: list[str]
-        :type attrs: list[str]
-        :type blend: float
-        :type key: bool
-        :type refresh: bool
-        :type mirror: bool
-        :type mirrorTable: mutils.MirrorTable
-        :type batchMode: bool
-        :type clearCache: bool
-        :type ignoreConnected: bool
-        :type onlyConnected: bool
-        :type clearSelection: bool
-        :type searchAndReplace: (str, str) or None
-        """
-        if mirror and not mirrorTable:
-            logger.warning("Cannot mirror pose without a mirror table!")
-            mirror = False
-
-        if batchMode:
-            key = False
-
-        self.updateCache(
-            objects=objects,
-            namespaces=namespaces,
-            attrs=attrs,
-            batchMode=batchMode,
-            clearCache=clearCache,
-            mirrorTable=mirrorTable,
-            onlyConnected=onlyConnected,
-            ignoreConnected=ignoreConnected,
-            searchAndReplace=searchAndReplace,
-        )
-
-        self.beforeLoad(clearSelection=clearSelection)
+        msg = u"Animation.save(path={0}, time={1}, bakeConnections={2}, sampleBy={3})"
+        msg = msg.format(path, str(time), str(bakeConnected), str(sampleBy))
+        logger.debug(msg)
 
         try:
-            self.loadCache(blend=blend, key=key, mirror=mirror)
+            if bakeConnected:
+                maya.cmds.undoInfo(openChunk=True)
+                mutils.bakeConnected(objects, time=(start, end), sampleBy=sampleBy)
+
+            for name in objects:
+                if maya.cmds.copyKey(name, time=(start, end), includeUpperBound=False, option="keys"):
+
+                    logger.debug(name)
+                    # Might return more than one object when duplicating shapes or blendshapes
+                    transform = maya.cmds.duplicate(name, name="CURVE", parentOnly=True)
+
+                    if not FIX_SAVE_ANIM_REFERENCE_LOCKED_ERROR:
+                        mutils.disconnectAll(transform[0])
+
+                    deleteObjects.append(transform[0])
+                    maya.cmds.pasteKey(transform[0])
+
+                    attrs = []
+                    name_type_list = maya.cmds.ls(transform[0], showType = True)
+                    if name_type_list[1] == BLEND_SHAPE_TYPE:
+                        attrs = self.getBlendshapeParamList(transform[0])
+                    else:
+                        attrs = maya.cmds.listAttr(transform[0], unlocked=True, keyable=True) or []
+                    attrs = list(set(attrs) - set(['translate', 'rotate', 'scale']))
+
+                    logger.debug(("attrs = {0}").format(attrs))
+                    for attr in attrs:
+                        logger.debug(("transform name = {0}, attr name = {1}").format(transform[0], attr))
+                        dstAttr = mutils.Attribute(transform[0], attr)
+                        dstCurve = dstAttr.animCurve()
+
+                        if dstCurve:
+
+                            dstCurve = maya.cmds.rename(dstCurve, "CURVE")
+                            deleteObjects.append(dstCurve)
+
+                            srcAttr = mutils.Attribute(name, attr)
+                            srcCurve = srcAttr.animCurve()
+
+                            if srcCurve:
+                                preInfinity = maya.cmds.getAttr(srcCurve + ".preInfinity")
+                                postInfinity = maya.cmds.getAttr(srcCurve + ".postInfinity")
+                                curveColor = maya.cmds.getAttr(srcCurve + ".curveColor")
+                                useCurveColor = maya.cmds.getAttr(srcCurve + ".useCurveColor")
+
+                                maya.cmds.setAttr(dstCurve + ".preInfinity", preInfinity)
+                                maya.cmds.setAttr(dstCurve + ".postInfinity", postInfinity)
+                                maya.cmds.setAttr(dstCurve + ".curveColor", *curveColor[0])
+                                maya.cmds.setAttr(dstCurve + ".useCurveColor", useCurveColor)
+
+                            if maya.cmds.keyframe(dstCurve, query=True, time=(start, end), keyframeCount=True):
+                                self.setAnimCurve(name, attr, dstCurve)
+                                maya.cmds.cutKey(dstCurve, time=(MIN_TIME_LIMIT, start - 1))
+                                maya.cmds.cutKey(dstCurve, time=(end + 1, MAX_TIME_LIMIT))
+                                validCurves.append(dstCurve)
+
+            fileName = "animation.ma"
+            if fileType == "mayaBinary":
+                fileName = "animation.mb"
+
+            mayaPath = os.path.join(path, fileName)
+            posePath = os.path.join(path, "pose.json")
+            mutils.Pose.save(self, posePath)
+
+            if validCurves:
+                maya.cmds.select(validCurves)
+                logger.info("Saving animation: %s" % mayaPath)
+                maya.cmds.file(mayaPath, force=True, options='v=0', type=fileType, uiConfiguration=False, exportSelected=True)
+                self.cleanMayaFile(mayaPath)
+
         finally:
-            if not batchMode:
-                self.afterLoad()
+            if bakeConnected:
+                # HACK! Undo all baked connections. :)
+                maya.cmds.undoInfo(closeChunk=True)
+                maya.cmds.undo()
+            elif deleteObjects:
+                maya.cmds.delete(deleteObjects)
 
-                # Return the focus to the Maya window
-                maya.cmds.setFocus("MayaWindow")
-
-        if refresh:
-            maya.cmds.refresh(cv=True)
-
-    def updateCache(
-            self,
-            objects=None,
-            namespaces=None,
-            attrs=None,
-            ignoreConnected=False,
-            onlyConnected=False,
-            mirrorTable=None,
-            batchMode=False,
-            clearCache=True,
-            searchAndReplace=None,
-    ):
-        """
-        Update the pose cache.
-        
-        :type objects: list[str] or None 
-        :type namespaces: list[str] or None
-        :type attrs: list[str] or None
-        :type ignoreConnected: bool
-        :type onlyConnected: bool
-        :type clearCache: bool
-        :type batchMode: bool
-        :type mirrorTable: mutils.MirrorTable
-        :type searchAndReplace: (str, str) or None
-        """
-        if clearCache or not batchMode or not self._mtime:
-            self._mtime = self.mtime()
-
-        mtime = self._mtime
-
-        cacheKey = \
-            str(mtime) + \
-            str(objects) + \
-            str(attrs) + \
-            str(namespaces) + \
-            str(ignoreConnected) + \
-            str(searchAndReplace) + \
-            str(maya.cmds.currentTime(query=True))
-
-        if self._cacheKey != cacheKey or clearCache:
-
-            self.validate(namespaces=namespaces)
-
-            self._cache = []
-            self._cacheKey = cacheKey
-
-            dstObjects = objects
-            srcObjects = self.objects()
-            usingNamespaces = not objects and namespaces
-
-            if mirrorTable:
-                self.setMirrorTable(mirrorTable)
-
-            search = None
-            replace = None
-            if searchAndReplace:
-                search = searchAndReplace[0]
-                replace = searchAndReplace[1]
-
-            matches = mutils.matchNames(
-                srcObjects,
-                dstObjects=dstObjects,
-                dstNamespaces=namespaces,
-                search=search,
-                replace=replace,
-            )
-
-            for srcNode, dstNode in matches:
-                self.cacheNode(
-                    srcNode,
-                    dstNode,
-                    attrs=attrs,
-                    onlyConnected=onlyConnected,
-                    ignoreConnected=ignoreConnected,
-                    usingNamespaces=usingNamespaces,
-                )
-
-        if not self.cache():
-            text = "No objects match when loading data. " \
-                   "Turn on debug mode to see more details."
-
-            raise mutils.NoMatchFoundError(text)
-
-    def cacheNode(
-            self,
-            srcNode,
-            dstNode,
-            attrs=None,
-            ignoreConnected=None,
-            onlyConnected=None,
-            usingNamespaces=None
-    ):
-        """
-        Cache the given pair of nodes.
-        
-        :type srcNode: mutils.Node
-        :type dstNode: mutils.Node
-        :type attrs: list[str] or None 
-        :type ignoreConnected: bool or None
-        :type onlyConnected: bool or None
-        :type usingNamespaces: none or list[str]
-        """
-        mirrorAxis = None
-        mirrorObject = None
-
-        # Remove the first pipe in-case the object has a parent
-        dstNode.stripFirstPipe()
-
-        srcName = srcNode.name()
-
-        if self.mirrorTable():
-            mirrorObject = self.mirrorTable().mirrorObject(srcName)
-
-            if not mirrorObject:
-                mirrorObject = srcName
-                msg = "Cannot find mirror object in pose for %s"
-                logger.debug(msg, srcName)
-
-            # Check if a mirror axis exists for the mirrorObject otherwise
-            # check the srcNode
-            mirrorAxis = self.mirrorAxis(mirrorObject) or self.mirrorAxis(srcName)
-
-            if mirrorObject and not maya.cmds.objExists(mirrorObject):
-                msg = "Mirror object does not exist in the scene %s"
-                logger.debug(msg, mirrorObject)
-
-        if usingNamespaces:
-            # Try and use the short name.
-            # Much faster than the long name when setting attributes.
-            try:
-                dstNode = dstNode.toShortName()
-            except mutils.NoObjectFoundError as msg:
-                logger.debug(msg)
-                return
-            except mutils.MoreThanOneObjectFoundError as msg:
-                logger.debug(msg)
-                return
-
-        for attr in self.attrs(srcName):
-
-            if attrs and attr not in attrs:
-                continue
-
-            dstAttribute = mutils.Attribute(dstNode.name(), attr)
-            isConnected = dstAttribute.isConnected()
-
-            if (ignoreConnected and isConnected) or (onlyConnected and not isConnected):
-                continue
-
-            type_ = self.attrType(srcName, attr)
-            value = self.attrValue(srcName, attr)
-            srcMirrorValue = self.mirrorValue(mirrorObject, attr, mirrorAxis=mirrorAxis)
-
-            srcAttribute = mutils.Attribute(dstNode.name(), attr, value=value, type=type_)
-            dstAttribute.update()
-
-            self._cache.append((srcAttribute, dstAttribute, srcMirrorValue))
-
-    def loadCache(self, blend=100, key=False, mirror=False):
-        """
-        Load the pose from the current cache.
-        
-        :type blend: float
-        :type key: bool
-        :type mirror: bool
-        :rtype: None
-        """
-        cache = self.cache()
-
-        for i in range(0, len(cache)):
-            srcAttribute, dstAttribute, srcMirrorValue = cache[i]
-            if srcAttribute and dstAttribute:
-                if mirror and srcMirrorValue is not None:
-                    value = srcMirrorValue
-                else:
-                    value = srcAttribute.value()
-                try:
-                    dstAttribute.set(value, blend=blend, key=key)
-                except (ValueError, RuntimeError):
-                    cache[i] = (None, None)
-                    logger.debug('Ignoring %s', dstAttribute.fullname())
+        self.setPath(path)
 
     def TestBlendshape(self):
         selections = maya.cmds.ls(selection=True) or []

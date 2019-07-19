@@ -511,7 +511,7 @@ class Animation(mutils.Pose):
             returnNewNodes=True,
             namespace=Animation.IMPORT_NAMESPACE,
         )
-
+        logger.debug(nodes)
         return nodes
 
     def close(self):
@@ -574,6 +574,7 @@ class Animation(mutils.Pose):
         :rtype: None
         """
         objects = self.objects().keys()
+        logger.debug(("objects = {0}").format(objects))
 
         fileType = fileType or DEFAULT_FILE_TYPE
 
@@ -618,6 +619,7 @@ class Animation(mutils.Pose):
             for name in objects:
                 if maya.cmds.copyKey(name, time=(start, end), includeUpperBound=False, option="keys"):
 
+                    logger.debug(name)
                     # Might return more than one object when duplicating shapes or blendshapes
                     transform, = maya.cmds.duplicate(name, name="CURVE", parentOnly=True)
 
@@ -722,14 +724,13 @@ class Animation(mutils.Pose):
         logger.debug("Animation.load(objects=%s, option=%s, namespaces=%s, srcTime=%s, currentTime=%s)" %
                      (len(objects), str(option), str(namespaces), str(sourceTime), str(currentTime)))
 
-        srcObjects = self.objects().keys()
+        srcObjects = self.objects().keys() #from json data
 
         if mirrorTable:
             self.setMirrorTable(mirrorTable)
 
         valid = False
         matches = list(mutils.matchNames(srcObjects=srcObjects, dstObjects=objects, dstNamespaces=namespaces))
-
         for srcNode, dstNode in matches:
             if dstNode.exists():
                 valid = True
@@ -777,7 +778,7 @@ class Animation(mutils.Pose):
                         logger.debug('Skipping attribute: The destination attribute "%s.%s" does not exist!' %
                                      (dstAttr.name(), dstAttr.attr()))
                         continue
-
+                    logger.debug(srcCurve)
                     if srcCurve:
                         dstAttr.setAnimCurve(
                             srcCurve,

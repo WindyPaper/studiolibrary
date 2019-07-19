@@ -94,73 +94,58 @@ class BlendshapeItem(baseitem.BaseItem):
 
     def __init__(self, *args, **kwargs):
         """
-        Create a new instance of the pose item from the given path.
+        Create a new instance of the anim item from the given path.
 
         :type path: str
         :type args: list
         :type kwargs: dict
         """
-        super(BlendshapeItem, self).__init__(*args, **kwargs)
+        baseitem.BaseItem.__init__(self, *args, **kwargs)
 
-        self._options = None
+        self.setTransferClass(mutils.Animation)
+        self.setTransferBasename("")
 
-        self.setBlendingEnabled(True)
-        self.setTransferClass(mutils.Blendshape)
-        self.setTransferBasename("blendshape.json")
+    def startFrame(self):
+        """Return the start frame for the animation."""
+        return self.transferObject().startFrame()
 
-    def loadValidator(self, **values):
+    def endFrame(self):
+        """Return the end frame for the animation."""
+        return self.transferObject().endFrame()
+
+    def imageSequencePath(self):
         """
-        Using the validator to change the state of the mirror option.
+        Return the image sequence location for playing the animation preview.
 
-        :type values: dict
+        :rtype: str
+        """
+        return self.path() + "/sequence"
+
+    def info(self):
+        """
+        Get the info to display to user.
+        
         :rtype: list[dict]
         """
-        # Mirror check box
-        # mirrorTip = "Cannot find a mirror table!"
-        # mirrorTable = self.mirrorTable()
-        # if mirrorTable:
-        #     mirrorTip = "Using mirror table: %s" % mirrorTable.path()
+        info = baseitem.BaseItem.info(self)
 
-        # fields = [
-        #     {
-        #         "name": "mirror",
-        #         "toolTip": mirrorTip,
-        #         "enabled": mirrorTable is not None,
-        #     },
-        #     {
-        #         "name": "searchAndReplace",
-        #         "visible": values.get("searchAndReplaceEnabled")
-        #     },
-        # ]
+        startFrame = str(self.startFrame())
+        endFrame = str(self.endFrame())
 
-        # fields.extend(super(BlendshapeItem, self).loadValidator(**values))
+        info.insert(3, {"name": "Start frame", "value": startFrame})
+        info.insert(4, {"name": "End frame", "value": endFrame})
 
-        # return fields
-        pass
-
-    def switchSearchAndReplace(self):
-        """
-        Switch the values of the search and replace field.
-
-        :rtype: (str, str)
-        """
-        values = self.currentLoadValue("searchAndReplace")
-        return values[1], values[0]
-
-    def clearSearchAndReplace(self):
-        """
-        Clear the search and replace field.
-
-        :rtype: (str, str)
-        """
-        return '', ''
+        return info
 
     def loadSchema(self):
         """
-        Get the schema used for creating the load options.
-
+        Get the options for the item.
+        
         :rtype: list[dict]
         """
+        startFrame = self.startFrame() or 0
+        endFrame = self.endFrame() or 0
+
         schema = [
             {
                 "name": "optionsGroup",
@@ -168,44 +153,32 @@ class BlendshapeItem(baseitem.BaseItem):
                 "type": "group",
             },
             {
-                "name": "key",
+                "name": "connect",
                 "type": "bool",
                 "inline": True,
                 "default": False,
                 "persistent": True,
+                "label": {"name": ""}
             },
             {
-                "name": "mirror",
+                "name": "currentTime",
                 "type": "bool",
                 "inline": True,
-                "default": False,
+                "default": True,
                 "persistent": True,
+                "label": {"name": ""}
             },
             {
-                "name": "searchAndReplaceEnabled",
-                "title": "Search and Replace",
-                "type": "bool",
-                "inline": True,
-                "default": False,
-                "persistent": True,
+                "name": "source",
+                "type": "range",
+                "default": [startFrame, endFrame],
             },
             {
-                "name": "searchAndReplace",
-                "title": "",
-                "type": "stringDouble",
-                "default": ("", ""),
-                "placeholder": ("search", "replace"),
+                "name": "option",
+                "type": "enum",
+                "default": "replace all",
+                "items": ["replace", "replace all", "insert", "merge"],
                 "persistent": True,
-                "actions": [
-                    {
-                        "name": "Switch",
-                        "callback": self.switchSearchAndReplace
-                    },
-                    {
-                        "name": "Clear",
-                        "callback": self.clearSearchAndReplace
-                    },
-                ]
             },
         ]
 
@@ -213,191 +186,209 @@ class BlendshapeItem(baseitem.BaseItem):
 
         return schema
 
-    def keyPressEvent(self, event):
+    def loadValidator(self, **values):
         """
-        Called when a key press event for the item is triggered.
+        Triggered when the user changes options.
         
-        :type event: QtGui.QEvent
+        This method is not yet used. It will be used to change the state of 
+        the options widget. For example the help image.
+        
+        :type values: list[dict]
         """
-        super(BlendshapeItem, self).keyPressEvent(event)
+        super(BlendshapeItem, self).loadValidator(**values)
 
-        if not event.isAutoRepeat():
-            if event.key() == QtCore.Qt.Key_M:
+        option = values.get("option")
+        connect = values.get("connect")
 
-                # Toggle the value of the mirror option
-                mirror = self.currentLoadValue("mirror")
-                self.emitLoadValueChanged("mirror", not mirror)
+        if option == "replace all":
+            basename = "replaceCompletely"
+            connect = False
+        else:
+            basename = option
 
-                blend = self.blendValue()
+        if connect and basename != "replaceCompletely":
+            basename += "Connect"
 
-                if self.isBlending():
-                    self.loadFromCurrentOptions(
-                        blend=blend,
-                        batchMode=True,
-                        showBlendMessage=True
-                    )
-                else:
-                    self.loadFromCurrentOptions(
-                        blend=blend,
-                        refresh=True,
-                        batchMode=False,
-                    )
+        logger.debug(basename)
 
-    def mouseReleaseEvent(self, event):
-        """
-        Triggered when the mouse button is released on this item.
+        return super(BlendshapeItem, self).loadValidator(**values)
 
-        :type event: QtCore.QMouseEvent
-        """
-        if self.isBlending():
-            self.loadFromCurrentOptions(blend=self.blendValue(), refresh=False)
-
-    def doubleClicked(self):
-        """Triggered when the user double clicks the item."""
-        self.loadFromCurrentOptions(clearSelection=False)
-
-    def selectionChanged(self):
-        """Triggered when the item is selected or deselected."""
-        self._transferObject = None
-        baseitem.BaseItem.selectionChanged(self)
-
-    def stopBlending(self):
-        """This method is called from the base class to stop blending."""
-        self._options = None
-        baseitem.BaseItem.stopBlending(self)
-
-    def setBlendValue(self, value, load=True):
-        """
-        This method is called from the base class to set the blend amount.
-
-        :type value: float
-        :type load: bool
-        """
-        super(BlendshapeItem, self).setBlendValue(value)
-
-        if load:
-            self.loadFromCurrentOptions(
-                blend=value,
-                batchMode=True,
-                showBlendMessage=True
-            )
-
-    def loadFromCurrentOptions(
-        self,
-        blend=100.0,
-        refresh=True,
-        batchMode=False,
-        clearSelection=True,
-        showBlendMessage=False,
-    ):
-        """
-        Load the pose item with the current user settings from disc.
-
-        :type blend: float
-        :type refresh: bool
-        :type batchMode: bool
-        :type clearSelection: bool
-        :type showBlendMessage: bool
-        """
-        if self._options is None:
-            self._options = dict()
-            self._options["key"] = self.currentLoadValue("key")
-            # self._options['namespaces'] = self.currentLoadValue("namespaces")
-            self._options['mirrorTable'] = self.mirrorTable()
-            self._options['objects'] = maya.cmds.ls(selection=True) or []
-
-        searchAndReplace = None
-        if self.currentLoadValue("searchAndReplaceEnabled"):
-            searchAndReplace = self.currentLoadValue("searchAndReplace")
-
-        try:
-            self.load(
-                blend=blend,
-                refresh=refresh,
-                batchMode=batchMode,
-                clearSelection=clearSelection,
-                showBlendMessage=showBlendMessage,
-                searchAndReplace=searchAndReplace,
-                **self._options
-            )
-        except Exception as error:
-            self.showErrorDialog("Item Error", str(error))
-            raise
-
+    @mutils.showWaitCursor
     def load(
-        self,
-        objects=None,
-        namespaces=None,
-        blend=100.0,
-        key=False,
-        attrs=None,
-        mirror=None,
-        refresh=True,
-        batchMode=False,
-        mirrorTable=None,
-        clearSelection=False,
-        showBlendMessage=False,
-        searchAndReplace=None,
+            self,
+            objects=None,
+            namespaces=None,
+            **options
     ):
         """
-        Load the pose item to the given objects or namespaces.
-        
+        Load the animation for the given objects and options.
+                
         :type objects: list[str]
-        :type blend: float
-        :type key: bool
-        :type namespaces: list[str] or None
-        :type refresh: bool
-        :type attrs: list[str] or None
-        :type mirror: bool or None
-        :type batchMode: bool
-        :type showBlendMessage: bool
-        :type clearSelection: bool
-        :type mirrorTable: mutils.MirrorTable
-        :type searchAndReplace: (str, str) or None
+        :type namespaces: list[str]
+        :type options: dict
         """
-        logger.debug(u'Loading: {0}'.format(self.path()))
+        logger.info(u'Loading: {0}'.format(self.path()))
 
-        # The mirror option can change during blending, so we always get
-        # the value instead of caching it. This might make blending slower.
-        if mirror is None:
-            mirror = self.currentLoadValue("mirror")
+        objects = objects or []
 
-        if namespaces is None:
-            namespaces = self.currentLoadValue("namespaces")
+        source = options.get("source")
+        option = options.get("option")
+        connect = options.get("connect")
+        currentTime = options.get("currentTime")
 
-        self.setBlendValue(blend, load=False)
+        if option.lower() == "replace all":
+            option = "replaceCompletely"
 
-        if showBlendMessage:
-            self.showToastMessage("Blend: {0}%".format(blend))
+        if source and source != [0, 0]:
+            sourceStart, sourceEnd = source
+        else:
+            sourceStart, sourceEnd = (None, None)
 
-        logger.info(u'Options: {0}'.format(namespaces))
+        if sourceStart is None:
+            sourceStart = self.startFrame()
+
+        if sourceEnd is None:
+            sourceEnd = self.endFrame()
+
+        self.transferObject().load(
+            objects=objects,
+            namespaces=namespaces,
+            currentTime=currentTime,
+            connect=connect,
+            option=option,
+            startFrame=None,
+            sourceTime=(sourceStart, sourceEnd)
+        )
+
+        logger.info(u'Loaded: {0}'.format(self.path()))
+
+    def saveValidator(self, **kwargs):
+        """
+        The save validator is called when an input field has changed.
+
+        :type kwargs: dict
+        :rtype: list[dict]
+        """
+        fields = super(BlendshapeItem, self).saveValidator(**kwargs)
+
+        # Validate the by frame field
+        if kwargs.get("byFrame") == '' or kwargs.get("byFrame", 1) < 1:
+            msg = "The by frame value cannot be less than 1!"
+            fields.extend([
+                {
+                    "name": "byFrame",
+                    "error": msg
+                }
+            ])
+
+        # Validate the frame range field
+        start, end = kwargs.get("frameRange", (0, 1))
+        if start >= end:
+            msg = "The start frame cannot be greater " \
+                  "than or equal to the end frame!"
+            fields.extend([
+                {
+                    "name": "frameRange",
+                    "error": msg
+                }
+            ])
+
+        # Validate the current selection field
+        selection = maya.cmds.ls(selection=True) or []
+        if selection and mutils.getDurationFromNodes(selection) <= 0:
+            msg = "No animation was found on the selected object/s! " \
+                  "Please create a pose instead!"
+            fields.extend([
+                {
+                    "name": "contains",
+                    "error": msg,
+                }
+            ])
+
+        return fields
+
+    def saveSchema(self):
+        """
+        Get the anim save schema.
+        
+        :rtype: list[dict]
+        """
+        start, end = (1, 100)
 
         try:
-            self.transferObject().load(
-                objects=objects,
-                namespaces=namespaces,
-                key=key,
-                blend=blend,
-                attrs=attrs,
-                mirror=mirror,
-                refresh=refresh,
-                batchMode=batchMode,
-                mirrorTable=mirrorTable,
-                clearSelection=clearSelection,
-                searchAndReplace=searchAndReplace
-            )
+            start, end = mutils.currentFrameRange()
+        except NameError as error:
+            logger.exception(error)
 
-        except Exception:
-            self.stopBlending()
-            raise
+        return [
+            {
+                "name": "folder",
+                "type": "path",
+                "layout": "vertical"
+            },
+            {
+                "name": "name",
+                "type": "string",
+                "layout": "vertical"
+            },
+            {
+                "name": "fileType",
+                "type": "enum",
+                "layout": "vertical",
+                "default": "mayaAscii",
+                "items": ["mayaAscii", "mayaBinary"],
+                "persistent": True
+            },
+            {
+                "name": "frameRange",
+                "type": "range",
+                "layout": "vertical",
+                "default": [start, end],
+                "actions": [
+                    {
+                        "name": "From Timeline",
+                        "callback": mutils.playbackFrameRange
+                    },
+                    {
+                        "name": "From Selected Timeline",
+                        "callback": mutils.selectedFrameRange
+                    },
+                    {
+                        "name": "From Selected Objects",
+                        "callback": mutils.selectedObjectsFrameRange
+                    },
+                ]
+            },
+            {
+                "name": "byFrame",
+                "type": "int",
+                "default": 1,
+                "layout": "vertical",
+                "persistent": True
+            },
+            {
+                "name": "comment",
+                "type": "text",
+                "layout": "vertical"
+            },
+            {
+                "name": "bakeConnected",
+                "type": "bool",
+                "default": False,
+                "persistent": True,
+                "inline": True,
+                "label": {"visible": False}
+            },
+            {
+                "name": "contains",
+                "type": "label",
+                "label": {
+                    "visible": False
+                }
+            },
+        ]    
 
-        finally:
-            if not batchMode:
-                self.stopBlending()
-
-        logger.debug(u'Loaded: {0}'.format(self.path()))
-
-    def write(self, path, objects, iconPath="", **options):
+    def write(self, path, objects, iconPath="", sequencePath="", **options):
         """
         Write all the given object data to the given path on disc.
 
@@ -410,8 +401,13 @@ class BlendshapeItem(baseitem.BaseItem):
 
         # Save the pose to the temp location
         mutils.saveBlendshape(
-            path + "/blendshape.json",
             objects,
-            metadata={"description": options.get("comment", "")}
+            path,
+            time=options.get("frameRange"),
+            fileType=options.get("fileType"),
+            iconPath=iconPath,
+            metadata={"description": options.get("comment", "")},
+            sequencePath=sequencePath,
+            bakeConnected=options.get("bake")
         )
         logger.debug("BlendShape Save!!")
