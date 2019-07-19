@@ -91,14 +91,14 @@ def saveBlendshape(path, objects, metadata=None):
     :type metadata: dict or None
     :rtype: Blendshape
     """
-    pose = mutils.Blendshape.fromObjects(objects)
+    blendshape = mutils.Blendshape.fromObjects(objects)
 
     if metadata:
-        pose.updateMetadata(metadata)
+        blendshape.updateMetadata(metadata)
 
-    pose.save(path)
+    blendshape.save(path)
 
-    return pose
+    return blendshape
 
 
 def loadBlendshape(path, *args, **kwargs):
@@ -142,8 +142,18 @@ class Blendshape(mutils.TransferObject):
         :type name: str
         :rtype: dict
         """
-        attrs = maya.cmds.listAttr(name, unlocked=True, keyable=True) or []
-        attrs = list(set(attrs))
+        attrs = []
+        if name == "Face":
+            blend_shape_param_size = maya.cmds.getAttr(name + ".weight", size = True)                
+            for i in range(0, blend_shape_param_size):
+                # $attr_name = ($blend_shape + ".weight[" + $i + "]");
+                attr_w_name = (name + ".weight[{0}]").format(i)
+                alias_attr_name = maya.cmds.aliasAttr(attr_w_name, query = True);
+                attrs.append(alias_attr_name)
+            # attrs = [mutils.Attribute(name, attr) for attr in attrs]
+        else:
+            attrs = maya.cmds.listAttr(name, keyable = True) or []        
+            attrs = list(set(attrs))
         attrs = [mutils.Attribute(name, attr) for attr in attrs]
 
         data = {"attrs": self.attrs(name)}
@@ -585,3 +595,27 @@ class Blendshape(mutils.TransferObject):
                 except (ValueError, RuntimeError):
                     cache[i] = (None, None)
                     logger.debug('Ignoring %s', dstAttribute.fullname())
+
+    def TestBlendshape(self):
+        selections = maya.cmds.ls(selection=True) or []
+        
+        for obj in selections:
+            # print maya.cmds.listHistory(obj)
+            # print maya.cmds.findKeyframe(obj)
+            print maya.cmds.keyframe(obj, query = True, keyframeCount = True)
+
+            # attrs = maya.cmds.listAttr(obj, keyable = True) or []        
+            # attrs = list(set(attrs))
+            # print attrs
+            # attrs = [mutils.Attribute(obj, attr) for attr in attrs]
+            # for attr in attrs:
+            #     print attr.name()
+
+            if obj == "Face":
+                blend_shape_param_size = maya.cmds.getAttr(obj + ".weight", size = True)                
+                for i in range(0, blend_shape_param_size):
+                    # $attr_name = ($blend_shape + ".weight[" + $i + "]");
+                    attr_w_name = (obj + ".weight[{0}]").format(i)
+                    alias_attr_name = maya.cmds.aliasAttr(attr_w_name, query = True);
+                    print alias_attr_name
+
