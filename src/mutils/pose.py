@@ -241,6 +241,7 @@ class Pose(mutils.TransferObject):
         :rtype: list[int] | None
         """
         result = None
+        logger.debug(("self.objects() = {0}").format(self.objects()))
         if name in self.objects():
             result = self.object(name).get("mirrorAxis", None)
 
@@ -272,6 +273,8 @@ class Pose(mutils.TransferObject):
         
         :type mirrorTable: mutils.MirrorTable
         """
+        logger.debug("set mirror table !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        logger.debug(("mirrorTable obj from json = {0}").format(mirrorTable.objects()))
         objects = self.objects().keys()
         self._mirrorTable = mirrorTable
 
@@ -292,9 +295,11 @@ class Pose(mutils.TransferObject):
         if self.mirrorTable() and name:
 
             value = self.attrValue(name, attr)
+            logger.debug(("before {0}.{1} val = {2}, mirrorAxis = {3}").format(name, attr, value, mirrorAxis))
 
             if value is not None:
                 value = self.mirrorTable().formatValue(attr, value, mirrorAxis)
+                logger.debug(("after {0}.{1} val = {2}").format(name, attr, value))
             else:
                 logger.debug("Cannot find mirror value for %s.%s", name, attr)
 
@@ -375,6 +380,9 @@ class Pose(mutils.TransferObject):
             logger.warning("Cannot mirror pose without a mirror table!")
             mirror = False
 
+        if mirror:
+            logger.debug("USE MIRROR TYPE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! path = " + mirrorTable.path())
+
         if batchMode:
             key = False
 
@@ -452,6 +460,7 @@ class Pose(mutils.TransferObject):
 
             dstObjects = objects
             srcObjects = self.objects()
+            logger.debug(("pose srcObjects = {0}").format(srcObjects))
             usingNamespaces = not objects and namespaces
 
             if mirrorTable:
@@ -514,10 +523,11 @@ class Pose(mutils.TransferObject):
 
         srcName = srcNode.name()
 
+        logger.debug(("Mirror Table = {0}").format(self.mirrorTable()))
         if self.mirrorTable():
             mirrorObject = self.mirrorTable().mirrorObject(srcName)
-
-            if not mirrorObject:
+            logger.debug(("mirrorObject = {0}").format(mirrorObject))
+            if mirrorObject == None:
                 mirrorObject = srcName
                 msg = "Cannot find mirror object in pose for %s"
                 logger.debug(msg, srcName)
@@ -556,6 +566,7 @@ class Pose(mutils.TransferObject):
             type_ = self.attrType(srcName, attr)
             value = self.attrValue(srcName, attr)
             srcMirrorValue = self.mirrorValue(mirrorObject, attr, mirrorAxis=mirrorAxis)
+            logger.debug(("mirrorValue obj = {0}, attr = {1}, mirrorAxis = {2}, mirror value = {3}").format(mirrorObject, attr, mirrorAxis, srcMirrorValue))
 
             srcAttribute = mutils.Attribute(dstNode.name(), attr, value=value, type=type_)
             dstAttribute.update()

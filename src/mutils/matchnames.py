@@ -83,8 +83,8 @@ def matchInIndex(node, index):
 
 def matchNames(srcObjects, dstObjects=None, dstNamespaces=None, search=None, replace=None):
     """
-    :type srcObjects: list[str]
-    :type dstObjects: list[str]
+    :type srcObjects: list[str]  #from mirror json file
+    :type dstObjects: list[str]  #from selection
     :type dstNamespaces: list[str]
     :rtype: list[(mutils.Node, mutils.Node)]
     """
@@ -102,7 +102,7 @@ def matchNames(srcObjects, dstObjects=None, dstNamespaces=None, search=None, rep
         dstGroup = groupObjects(dstObjects)
         dstNamespaces = dstGroup.keys()
 
-    dstIndex = indexObjects(dstObjects)
+    dstIndex = indexObjects(dstObjects) #name mapto node
     # DESTINATION NAMESPACES NOT IN SOURCE OBJECTS
     dstNamespaces2 = list(set(dstNamespaces) - set(srcNamespaces))
 
@@ -131,6 +131,7 @@ def matchNames(srcObjects, dstObjects=None, dstNamespaces=None, search=None, rep
                     dstNode = matchInIndex(dstNode, dstIndex)
                 if dstNode:
                     results.append((srcNode, dstNode))
+                    logger.debug(("yield ------------------------------> "))
                     yield (srcNode, dstNode)
                 else:
                     logger.debug("Cannot find matching destination object for %s" % srcNode.name())

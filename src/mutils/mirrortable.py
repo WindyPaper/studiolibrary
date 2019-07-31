@@ -88,7 +88,7 @@ logger = logging.getLogger(__name__)
 RE_LEFT_SIDE = "Left|left|Lf|lt_|_lt|lf_|_lf|_l_|_L|L_|:l_|^l_|_l$|:L|^L"
 RE_RIGHT_SIDE = "Right|right|Rt|rt_|_rt|_r_|_R|R_|:r_|^r_|_r$|:R|^R"
 
-VALID_NODE_TYPES = ["joint", "transform"]
+VALID_NODE_TYPES = ["joint", "transform", "hikFKJoint", "hikIKEffector"]
 
 
 class MirrorPlane:
@@ -114,6 +114,7 @@ def saveMirrorTable(path, objects, metadata=None, *args, **kwargs):
     :type kwargs: dict
     :rtype: MirrorTable 
     """
+    logger.debug(("objects = {0}").format((objects)))
     mirrorTable = MirrorTable.fromObjects(objects, *args, **kwargs)
 
     if metadata:
@@ -149,6 +150,8 @@ class MirrorTable(mutils.TransferObject):
         mirrorTable.setMetadata("left", leftSide)
         mirrorTable.setMetadata("right", rightSide)
         mirrorTable.setMetadata("mirrorPlane", mirrorPlane)
+
+        logger.debug(("fromObjects = {0}").format(objects))
 
         for obj in objects:
             nodeType = maya.cmds.nodeType(obj)
@@ -404,11 +407,15 @@ class MirrorTable(mutils.TransferObject):
             if dstName == obj:
                 dstName = obj.replace(rightSide, leftSide)
 
+            logger.debug("dstName = " + dstName)
+            logger.debug("obj = " + obj)
             if dstName != obj:
                 return dstName
 
         # Return None as the given name is probably a center control
         # and doesn't have an opposite side.
+        logger.debug("none dstName = " + dstName)
+        logger.debug("none obj = " + obj)
         return None
 
     @staticmethod
@@ -698,9 +705,13 @@ class MirrorTable(mutils.TransferObject):
             dstObjects=objects,
             dstNamespaces=namespaces,
         )
-
+        logger.debug("*********************")
+        logger.debug(("matches = {0}").format(matches))
+        # logger.debug()
         for srcNode, dstNode in matches:
             dstObj = dstNode.name()
+            logger.debug("KKK disObj name = " + dstObj)
+            logger.debug("KKK srcNode.name = " + srcNode.name())
             dstObj2 = self.mirrorObject(dstObj) or dstObj
 
             if dstObj2 not in results:
@@ -709,12 +720,15 @@ class MirrorTable(mutils.TransferObject):
                 mirrorAxis = self.mirrorAxis(srcNode.name())
                 dstObjExists = maya.cmds.objExists(dstObj)
                 dstObj2Exists = maya.cmds.objExists(dstObj2)
+                logger.debug(("dstObj2 = {0}").format(dstObj2))
 
                 if dstObjExists and dstObj2Exists:
                     foundObject = True
                     if animation:
+                        logger.debug("transferAnimation !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                         self.transferAnimation(dstObj, dstObj2, mirrorAxis=mirrorAxis, option=option, time=time)
                     else:
+                        logger.debug("transferStatic !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                         self.transferStatic(dstObj, dstObj2, mirrorAxis=mirrorAxis, option=option)
                 else:
                     if not dstObjExists:
@@ -764,9 +778,11 @@ class MirrorTable(mutils.TransferObject):
                     dstValue = maya.cmds.getAttr(dstAttr)
 
                 if dstValid:
+                    logger.debug(("{0} attr = {1}, value = {2}, axis = {3}").format(dstObj, attr, srcValue, mirrorAxis))
                     self.setAttr(dstObj, attr, srcValue, mirrorAxis=mirrorAxis)
 
                 if srcValid:
+                    logger.debug(("{0} attr = {1}, value = {2}, axis = {3}").format(srcObj, attr, dstValue, mirrorAxis))
                     self.setAttr(srcObj, attr, dstValue, mirrorAxis=mirrorAxis)
             else:
                 logger.debug("Cannot find destination attribute %s" % dstAttr)
@@ -781,6 +797,7 @@ class MirrorTable(mutils.TransferObject):
         if mirrorAxis is not None:
             value = self.formatValue(attr, value, mirrorAxis)
         try:
+            logger.debug(("mirror set attr {0}.{1} = {2}").format(name, attr, value))
             maya.cmds.setAttr(name + "." + attr, value)
         except RuntimeError:
             msg = "Cannot mirror static attribute {name}.{attr}"
