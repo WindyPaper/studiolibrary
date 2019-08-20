@@ -550,6 +550,21 @@ class Animation(mutils.Pose):
         with open(path, "w") as f:
             f.writelines(results)
 
+    def listAttachedAnimCurves(self, node_name):
+        # src_a = maya.cmds.listConnections(node_name, s=True, d=False, c=True)
+        src_n = maya.cmds.listConnections(node_name, s=True, d=False)
+
+        for i in range(len(src_n)):
+            # j = i * 2
+
+            node_type = maya.cmds.nodeType(src_n[i])
+
+            if node_type == "animCurveTA" or node_type == "animCurveTL" or node_type == "animCurveTU":
+                curve_name = src_n[i];# src_a[j+1]
+                val = maya.cmds.keyframe(curve_name, query=True, time=(81, 81), ev=True)
+                logger.debug(("lllll listAttachedAnimCurves{0} = {1}").format(curve_name, val))
+
+
     @mutils.timing
     @mutils.unifyUndo
     @mutils.showWaitCursor
@@ -607,9 +622,9 @@ class Animation(mutils.Pose):
         validCurves = []
         deleteObjects = []
 
-        msg = u"Animation.save(path={0}, time={1}, bakeConnections={2}, sampleBy={3})"
-        msg = msg.format(path, str(time), str(bakeConnected), str(sampleBy))
-        logger.debug(msg)
+        # msg = u"Animation.save(path={0}, time={1}, bakeConnections={2}, sampleBy={3})"
+        # msg = msg.format(path, str(time), str(bakeConnected), str(sampleBy))
+        # logger.debug(msg)
 
         try:
             if bakeConnected:
@@ -617,48 +632,50 @@ class Animation(mutils.Pose):
                 mutils.bakeConnected(objects, time=(start, end), sampleBy=sampleBy)
 
             for name in objects:
-                if maya.cmds.copyKey(name, time=(start, end), includeUpperBound=False, option="keys"):
+                if maya.cmds.copyKey(name, time=(start, end), includeUpperBound=False, option="keys", hierarchy="none", shape=True):
 
-                    logger.debug(name)
                     # Might return more than one object when duplicating shapes or blendshapes
-                    transform, = maya.cmds.duplicate(name, name="CURVE", parentOnly=True)
+                    transform = name;#maya.cmds.duplicate(name, name="CURVE", parentOnly=True)
 
-                    if not FIX_SAVE_ANIM_REFERENCE_LOCKED_ERROR:
-                        mutils.disconnectAll(transform)
+                    # if not FIX_SAVE_ANIM_REFERENCE_LOCKED_ERROR:
+                    #     mutils.disconnectAll(transform)
 
-                    deleteObjects.append(transform)
-                    maya.cmds.pasteKey(transform)
+                    #deleteObjects.append(transform)
+                    #maya.cmds.pasteKey(transform)
 
                     attrs = maya.cmds.listAttr(transform, unlocked=True, keyable=True) or []
-                    attrs = list(set(attrs) - set(['translate', 'rotate', 'scale']))
+                    attrs = list(set(attrs) - set(['translate', 'rotate', 'scale']))                    
 
+                    self.listAttachedAnimCurves(transform)
                     for attr in attrs:
                         dstAttr = mutils.Attribute(transform, attr)
                         dstCurve = dstAttr.animCurve()
+                        logger.debug(("dstCurve = {0}").format(dstCurve))
 
                         if dstCurve:
-
-                            dstCurve = maya.cmds.rename(dstCurve, "CURVE")
-                            deleteObjects.append(dstCurve)
+                            # dstCurve = maya.cmds.rename(dstCurve, "CURVE")
+                            # deleteObjects.append(dstCurve)
 
                             srcAttr = mutils.Attribute(name, attr)
                             srcCurve = srcAttr.animCurve()
 
-                            if srcCurve:
-                                preInfinity = maya.cmds.getAttr(srcCurve + ".preInfinity")
-                                postInfinity = maya.cmds.getAttr(srcCurve + ".postInfinity")
-                                curveColor = maya.cmds.getAttr(srcCurve + ".curveColor")
-                                useCurveColor = maya.cmds.getAttr(srcCurve + ".useCurveColor")
+                            # if srcCurve:
+                            #     preInfinity = maya.cmds.getAttr(srcCurve + ".preInfinity")
+                            #     postInfinity = maya.cmds.getAttr(srcCurve + ".postInfinity")
+                            #     curveColor = maya.cmds.getAttr(srcCurve + ".curveColor")
+                            #     useCurveColor = maya.cmds.getAttr(srcCurve + ".useCurveColor")
 
-                                maya.cmds.setAttr(dstCurve + ".preInfinity", preInfinity)
-                                maya.cmds.setAttr(dstCurve + ".postInfinity", postInfinity)
-                                maya.cmds.setAttr(dstCurve + ".curveColor", *curveColor[0])
-                                maya.cmds.setAttr(dstCurve + ".useCurveColor", useCurveColor)
+                            #     maya.cmds.setAttr(dstCurve + ".preInfinity", preInfinity)
+                            #     maya.cmds.setAttr(dstCurve + ".postInfinity", postInfinity)
+                            #     maya.cmds.setAttr(dstCurve + ".curveColor", *curveColor[0])
+                            #     maya.cmds.setAttr(dstCurve + ".useCurveColor", useCurveColor)
 
                             if maya.cmds.keyframe(dstCurve, query=True, time=(start, end), keyframeCount=True):
+                                # val = maya.cmds.keyframe(dstCurve, query=True, time=(81, 81), ev=True)
+                                # logger.debug(("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv val = {0}").format(val))
                                 self.setAnimCurve(name, attr, dstCurve)
-                                maya.cmds.cutKey(dstCurve, time=(MIN_TIME_LIMIT, start - 1))
-                                maya.cmds.cutKey(dstCurve, time=(end + 1, MAX_TIME_LIMIT))
+                                # maya.cmds.cutKey(dstCurve, time=(MIN_TIME_LIMIT, start - 1))
+                                # maya.cmds.cutKey(dstCurve, time=(end + 1, MAX_TIME_LIMIT))
                                 validCurves.append(dstCurve)
 
             fileName = "animation.ma"
@@ -681,7 +698,8 @@ class Animation(mutils.Pose):
                 maya.cmds.undoInfo(closeChunk=True)
                 maya.cmds.undo()
             elif deleteObjects:
-                maya.cmds.delete(deleteObjects)
+                pass
+                #maya.cmds.delete(deleteObjects)
 
         self.setPath(path)
 
