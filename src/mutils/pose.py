@@ -135,6 +135,16 @@ class Pose(mutils.TransferObject):
         self._mirrorTable = None
         self._autoKeyFrame = None
 
+    def getBlendshapeParamList(self, name):
+        attrs = []
+        blend_shape_param_size = maya.cmds.getAttr(name + ".weight", size = True)                
+        for i in range(0, blend_shape_param_size):
+            # $attr_name = ($blend_shape + ".weight[" + $i + "]");
+            attr_w_name = (name + ".weight[{0}]").format(i)
+            alias_attr_name = maya.cmds.aliasAttr(attr_w_name, query = True);
+            attrs.append(alias_attr_name)
+        return attrs
+
     def createObjectData(self, name):
         """
         Create the object data for the given object name.
@@ -142,7 +152,12 @@ class Pose(mutils.TransferObject):
         :type name: str
         :rtype: dict
         """
-        attrs = maya.cmds.listAttr(name, unlocked=True, keyable=True) or []
+        name_type_list = maya.cmds.ls(name, showType = True)
+        attrs = []
+        if name_type_list[1] == "blendShape":
+            attrs = self.getBlendshapeParamList(name)
+        else:
+            attrs = maya.cmds.listAttr(name, keyable=True) or []
         attrs = list(set(attrs))
         attrs = [mutils.Attribute(name, attr) for attr in attrs]
 

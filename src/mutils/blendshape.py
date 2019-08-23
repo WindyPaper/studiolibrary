@@ -271,15 +271,15 @@ class Blendshape(mutils.Animation):
         self._mirrorTable = None
         self._autoKeyFrame = None
 
-    def getBlendshapeParamList(self, name):
-        attrs = []
-        blend_shape_param_size = maya.cmds.getAttr(name + ".weight", size = True)                
-        for i in range(0, blend_shape_param_size):
-            # $attr_name = ($blend_shape + ".weight[" + $i + "]");
-            attr_w_name = (name + ".weight[{0}]").format(i)
-            alias_attr_name = maya.cmds.aliasAttr(attr_w_name, query = True);
-            attrs.append(alias_attr_name)
-        return attrs
+    # def getBlendshapeParamList(self, name):
+    #     attrs = []
+    #     blend_shape_param_size = maya.cmds.getAttr(name + ".weight", size = True)                
+    #     for i in range(0, blend_shape_param_size):
+    #         # $attr_name = ($blend_shape + ".weight[" + $i + "]");
+    #         attr_w_name = (name + ".weight[{0}]").format(i)
+    #         alias_attr_name = maya.cmds.aliasAttr(attr_w_name, query = True);
+    #         attrs.append(alias_attr_name)
+    #     return attrs
 
     def createObjectData(self, name):
         """
@@ -385,51 +385,51 @@ class Blendshape(mutils.Animation):
 
                     logger.debug(name)
                     # Might return more than one object when duplicating shapes or blendshapes
-                    transform = maya.cmds.duplicate(name, name="CURVE", parentOnly=True)
+                    # transform = maya.cmds.duplicate(name, name="CURVE", parentOnly=True)
 
-                    if not FIX_SAVE_ANIM_REFERENCE_LOCKED_ERROR:
-                        mutils.disconnectAll(transform[0])
+                    # if not FIX_SAVE_ANIM_REFERENCE_LOCKED_ERROR:
+                    #     mutils.disconnectAll(transform[0])
 
-                    deleteObjects.append(transform[0])
-                    maya.cmds.pasteKey(transform[0])
+                    # deleteObjects.append(transform[0])
+                    # maya.cmds.pasteKey(transform[0])
 
                     attrs = []
-                    name_type_list = maya.cmds.ls(transform[0], showType = True)
+                    name_type_list = maya.cmds.ls(name, showType = True)
                     if name_type_list[1] == BLEND_SHAPE_TYPE:
-                        attrs = self.getBlendshapeParamList(transform[0])
+                        attrs = self.getBlendshapeParamList(name)
                     else:
-                        attrs = maya.cmds.listAttr(transform[0], unlocked=True, keyable=True) or []
+                        attrs = maya.cmds.listAttr(name, unlocked=True, keyable=True) or []
                     attrs = list(set(attrs) - set(['translate', 'rotate', 'scale']))
 
                     logger.debug(("attrs = {0}").format(attrs))
                     for attr in attrs:
-                        logger.debug(("transform name = {0}, attr name = {1}").format(transform[0], attr))
-                        dstAttr = mutils.Attribute(transform[0], attr)
+                        logger.debug(("transform name = {0}, attr name = {1}").format(name, attr))
+                        dstAttr = mutils.Attribute(name, attr)
                         dstCurve = dstAttr.animCurve()
 
                         if dstCurve:
 
-                            dstCurve = maya.cmds.rename(dstCurve, "CURVE")
-                            deleteObjects.append(dstCurve)
+                            # dstCurve = maya.cmds.rename(dstCurve, "CURVE")
+                            # deleteObjects.append(dstCurve)
 
-                            srcAttr = mutils.Attribute(name, attr)
-                            srcCurve = srcAttr.animCurve()
+                            # srcAttr = mutils.Attribute(name, attr)
+                            # srcCurve = srcAttr.animCurve()
 
-                            if srcCurve:
-                                preInfinity = maya.cmds.getAttr(srcCurve + ".preInfinity")
-                                postInfinity = maya.cmds.getAttr(srcCurve + ".postInfinity")
-                                curveColor = maya.cmds.getAttr(srcCurve + ".curveColor")
-                                useCurveColor = maya.cmds.getAttr(srcCurve + ".useCurveColor")
+                            # if srcCurve:
+                            #     preInfinity = maya.cmds.getAttr(srcCurve + ".preInfinity")
+                            #     postInfinity = maya.cmds.getAttr(srcCurve + ".postInfinity")
+                            #     curveColor = maya.cmds.getAttr(srcCurve + ".curveColor")
+                            #     useCurveColor = maya.cmds.getAttr(srcCurve + ".useCurveColor")
 
-                                maya.cmds.setAttr(dstCurve + ".preInfinity", preInfinity)
-                                maya.cmds.setAttr(dstCurve + ".postInfinity", postInfinity)
-                                maya.cmds.setAttr(dstCurve + ".curveColor", *curveColor[0])
-                                maya.cmds.setAttr(dstCurve + ".useCurveColor", useCurveColor)
+                            #     maya.cmds.setAttr(dstCurve + ".preInfinity", preInfinity)
+                            #     maya.cmds.setAttr(dstCurve + ".postInfinity", postInfinity)
+                            #     maya.cmds.setAttr(dstCurve + ".curveColor", *curveColor[0])
+                            #     maya.cmds.setAttr(dstCurve + ".useCurveColor", useCurveColor)
 
                             if maya.cmds.keyframe(dstCurve, query=True, time=(start, end), keyframeCount=True):
                                 self.setAnimCurve(name, attr, dstCurve)
-                                maya.cmds.cutKey(dstCurve, time=(MIN_TIME_LIMIT, start - 1))
-                                maya.cmds.cutKey(dstCurve, time=(end + 1, MAX_TIME_LIMIT))
+                                # maya.cmds.cutKey(dstCurve, time=(MIN_TIME_LIMIT, start - 1))
+                                # maya.cmds.cutKey(dstCurve, time=(end + 1, MAX_TIME_LIMIT))
                                 validCurves.append(dstCurve)
 
             fileName = "animation.ma"

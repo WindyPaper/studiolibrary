@@ -436,6 +436,9 @@ class Attribute(object):
             last = maya.cmds.findKeyframe(curve, which='last')
             source = (first, last)
 
+
+        logger.debug(("source = {0}, time = {1}").format(source, time))
+
         # We run the copy key command twice to check we have a valid curve.
         # It needs to run before the cutKey command, otherwise if it fails
         # we have cut keys for no reason!
